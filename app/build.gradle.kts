@@ -10,8 +10,8 @@ android {
         applicationId = "com.mj.jarvis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 140
-        versionName = "1.4.0"
+        versionCode = 141
+        versionName = "1.4.1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
