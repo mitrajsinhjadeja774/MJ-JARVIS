@@ -27,10 +27,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
   tts = TextToSpeech(this, this)
   val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER_HORIZONTAL; setPadding(28,36,28,24) }
-  root.addView(TextView(this).apply { text="M.J. JARVIS V1.3.3"; textSize=30f; gravity=Gravity.CENTER })
+  root.addView(TextView(this).apply { text="M.J. JARVIS V1.4.0"; textSize=30f; gravity=Gravity.CENTER })
   status = TextView(this).apply { text="Your personal voice assistant"; textSize=16f; gravity=Gravity.CENTER; setPadding(0,18,0,18) }
   root.addView(status)
   root.addView(Button(this).apply { text="TALK TO JARVIS"; setOnClickListener { listen() } })
+  root.addView(Button(this).apply { text="START BACKGROUND LISTENING"; setOnClickListener { startBackgroundListening() } })
+  root.addView(Button(this).apply { text="PRIVACY ON · STOP LISTENING"; setOnClickListener { stopService(Intent(this@MainActivity, JarvisListeningService::class.java)); status.text="Listening stopped — Privacy ON" } })
   root.addView(Button(this).apply {
    text="ENABLE SCREEN CONTROL"
    setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -45,6 +47,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   setContentView(root)
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20)
   speak(prefs.getString("greeting",defaultGreeting) ?: defaultGreeting)
+ }
+
+ private fun startBackgroundListening() {
+  if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20);return}
+  try { startForegroundService(Intent(this, JarvisListeningService::class.java)); status.text="Background listening started. Use notification to stop." }
+  catch(e: Exception){status.text="Could not start background listening: ${e.message}"}
  }
 
  private fun listen() {
