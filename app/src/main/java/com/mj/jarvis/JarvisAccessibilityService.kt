@@ -13,6 +13,8 @@ class JarvisAccessibilityService : AccessibilityService() {
         instance = this
     }
 
+    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {}
+
     override fun onInterrupt() {}
 
     override fun onDestroy() {
