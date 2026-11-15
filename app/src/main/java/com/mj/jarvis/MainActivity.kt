@@ -21,6 +21,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
  private var tts: TextToSpeech? = null
  private var recognizer: SpeechRecognizer? = null
  private val defaultGreeting = "Yes Mitraj Sir, how can I help you?"
+
  override fun onCreate(savedInstanceState: Bundle?) {
   super.onCreate(savedInstanceState)
   prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
@@ -35,11 +36,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   root.addView(greeting)
   root.addView(Button(this).apply { text="Save greeting"; setOnClickListener { val v=greeting.text.toString().trim(); if(v.isNotEmpty()){prefs.edit().putString("greeting",v).apply(); speak("Greeting saved")} } })
   root.addView(Button(this).apply { text="Reset greeting"; setOnClickListener { prefs.edit().remove("greeting").apply(); greeting.setText(defaultGreeting); speak("Greeting reset") } })
-  root.addView(TextView(this).apply { text="Commands: WhatsApp, YouTube, call [number], alarm, Wi-Fi, Bluetooth"; setPadding(0,24,0,0) })
+  root.addView(TextView(this).apply { text="Try: open Chrome, WhatsApp, YouTube, alarm, Wi-Fi, Bluetooth, or call [number]"; setPadding(0,24,0,0) })
   setContentView(root)
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20)
   speak(prefs.getString("greeting",defaultGreeting) ?: defaultGreeting)
  }
+
  private fun listen() {
   if(!SpeechRecognizer.isRecognitionAvailable(this)){status.text="Speech recognition unavailable";return}
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20);return}
@@ -58,8 +60,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   })
   recognizer?.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);putExtra(RecognizerIntent.EXTRA_LANGUAGE,Locale.getDefault().toLanguageTag());putExtra(RecognizerIntent.EXTRA_PROMPT,"Speak to JARVIS") })
  }
+
  private fun command(raw:String) {
-  val c=raw.lowercase(Locale.ROOT)
+  val c=raw.trim().lowercase(Locale.ROOT)
   when {
    c.contains("whatsapp")->launch("com.whatsapp","WhatsApp")
    c.contains("youtube")->launch("com.google.android.youtube","YouTube")
@@ -67,10 +70,24 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
    c.contains("bluetooth")-> {startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS));speak("Opening Bluetooth settings")}
    c.contains("alarm")-> {startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS));speak("Opening alarms")}
    c.startsWith("call ")-> {val n=raw.substringAfter("call ").filter{it.isDigit()||it=='+'};if(n.isNotBlank()){startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$n")));speak("Opening dialer")}else speak("Say call followed by a phone number")}
-   else->speak("I can open WhatsApp, YouTube, Wi-Fi, Bluetooth, alarms, or the dialer.")
+   c.startsWith("open ")||c.startsWith("launch ")-> {val name=c.substringAfter(' ').trim();if(name.isNotBlank())launchAnyApp(name) else speak("Tell me which app to open")}
+   else->speak("Try saying open followed by an app name, or ask for WhatsApp, YouTube, Wi-Fi, Bluetooth, alarms, or the dialer.")
   }
  }
- private fun launch(pkg:String,label:String){val i=packageManager.getLaunchIntentForPackage(pkg);if(i!=null){startActivity(i);speak("Opening $label")}else{speak("$label is not installed");Toast.makeText(this,"$label is not installed",Toast.LENGTH_SHORT).show()}}
+
+ private fun launchAnyApp(requestedName:String) {
+  val launcher=Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+  val apps=packageManager.queryIntentActivities(launcher,0)
+  val match=apps.firstOrNull{it.loadLabel(packageManager).toString().trim().equals(requestedName,ignoreCase=true)}
+   ?: apps.firstOrNull{it.loadLabel(packageManager).toString().contains(requestedName,ignoreCase=true)}
+  if(match==null){speak("I couldn't find " + requestedName + " on this phone");return}
+  val label=match.loadLabel(packageManager).toString()
+  val launchIntent=packageManager.getLaunchIntentForPackage(match.activityInfo.packageName)
+  if(launchIntent!=null){startActivity(launchIntent);speak("Opening " + label)}
+  else speak("I couldn't open " + label)
+ }
+
+ private fun launch(pkg:String,label:String){val i=packageManager.getLaunchIntentForPackage(pkg);if(i!=null){startActivity(i);speak("Opening " + label)}else{speak(label + " is not installed");Toast.makeText(this,label + " is not installed",Toast.LENGTH_SHORT).show()}}
  private fun speak(s:String){status.text=s;tts?.speak(s,TextToSpeech.QUEUE_FLUSH,null,"jarvis_reply")}
  override fun onInit(code:Int){if(code==TextToSpeech.SUCCESS){tts?.language=Locale("en","IN");tts?.setSpeechRate(.95f)}}
  override fun onDestroy(){recognizer?.destroy();tts?.stop();tts?.shutdown();super.onDestroy()}
