@@ -27,7 +27,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
   tts = TextToSpeech(this, this)
   val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER_HORIZONTAL; setPadding(28,36,28,24) }
-  root.addView(TextView(this).apply { text="M.J. JARVIS V1.4.1"; textSize=30f; gravity=Gravity.CENTER })
+  root.addView(TextView(this).apply { text="M.J. JARVIS V1.4.2"; textSize=30f; gravity=Gravity.CENTER })
   status = TextView(this).apply { text="Your personal voice assistant"; textSize=16f; gravity=Gravity.CENTER; setPadding(0,18,0,18) }
   root.addView(status)
   root.addView(Button(this).apply { text="TALK TO JARVIS"; setOnClickListener { listen() } })
