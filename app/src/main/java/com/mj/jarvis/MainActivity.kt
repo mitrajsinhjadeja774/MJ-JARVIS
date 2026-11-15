@@ -27,16 +27,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
   tts = TextToSpeech(this, this)
   val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER_HORIZONTAL; setPadding(28,36,28,24) }
-  root.addView(TextView(this).apply { text="M.J. JARVIS"; textSize=30f; gravity=Gravity.CENTER })
+  root.addView(TextView(this).apply { text="M.J. JARVIS V1.3.3"; textSize=30f; gravity=Gravity.CENTER })
   status = TextView(this).apply { text="Your personal voice assistant"; textSize=16f; gravity=Gravity.CENTER; setPadding(0,18,0,18) }
   root.addView(status)
   root.addView(Button(this).apply { text="TALK TO JARVIS"; setOnClickListener { listen() } })
+  root.addView(Button(this).apply {
+   text="ENABLE SCREEN CONTROL"
+   setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+  })
+  root.addView(TextView(this).apply { text="Screen commands: back, home, recents, scroll down, scroll up, tap [visible text]"; setPadding(0,12,0,0) })
   root.addView(TextView(this).apply { text="Custom greeting"; textSize=18f; setPadding(0,26,0,8) })
   greeting = EditText(this).apply { setText(prefs.getString("greeting",defaultGreeting)); hint="Enter greeting" }
   root.addView(greeting)
   root.addView(Button(this).apply { text="Save greeting"; setOnClickListener { val v=greeting.text.toString().trim(); if(v.isNotEmpty()){prefs.edit().putString("greeting",v).apply(); speak("Greeting saved")} } })
   root.addView(Button(this).apply { text="Reset greeting"; setOnClickListener { prefs.edit().remove("greeting").apply(); greeting.setText(defaultGreeting); speak("Greeting reset") } })
-  root.addView(TextView(this).apply { text="Try: open Chrome, WhatsApp, YouTube, alarm, Wi-Fi, Bluetooth, or call [number]"; setPadding(0,24,0,0) })
+  root.addView(TextView(this).apply { text="Also try: open Chrome, WhatsApp, YouTube, alarm, Wi-Fi, Bluetooth, or call [number]"; setPadding(0,18,0,0) })
   setContentView(root)
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20)
   speak(prefs.getString("greeting",defaultGreeting) ?: defaultGreeting)
@@ -64,6 +69,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
  private fun command(raw:String) {
   val c=raw.trim().lowercase(Locale.ROOT)
   when {
+   c=="back" || c=="go back" || c=="home" || c=="go home" || c=="recents" || c=="recent apps" ||
+   c=="scroll down" || c=="scroll up" || c.startsWith("tap ")-> {
+    if(JarvisAccessibilityService.execute(c)) speak("Done")
+    else speak("Screen control is not enabled or the target was not found. Enable it in Accessibility settings.")
+   }
    c.contains("whatsapp")->launch("com.whatsapp","WhatsApp")
    c.contains("youtube")->launch("com.google.android.youtube","YouTube")
    c.contains("wifi")||c.contains("wi-fi")-> {startActivity(Intent(Settings.ACTION_WIFI_SETTINGS));speak("Opening Wi-Fi settings")}
@@ -71,7 +81,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
    c.contains("alarm")-> {startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS));speak("Opening alarms")}
    c.startsWith("call ")-> {val n=raw.substringAfter("call ").filter{it.isDigit()||it=='+'};if(n.isNotBlank()){startActivity(Intent(Intent.ACTION_DIAL,Uri.parse("tel:$n")));speak("Opening dialer")}else speak("Say call followed by a phone number")}
    c.startsWith("open ")||c.startsWith("launch ")-> {val name=c.substringAfter(' ').trim();if(name.isNotBlank())launchAnyApp(name) else speak("Tell me which app to open")}
-   else->speak("Try saying open followed by an app name, or ask for WhatsApp, YouTube, Wi-Fi, Bluetooth, alarms, or the dialer.")
+   else->speak("Try open an app, or use back, home, recents, scroll down, scroll up, or tap followed by visible text.")
   }
  }
 
