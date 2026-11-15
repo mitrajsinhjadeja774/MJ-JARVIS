@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">M.J. JARVIS</string>
+    <string name="accessibility_service_description">Allows JARVIS to perform explicit screen navigation, scrolling, and text-targeted taps when you issue a command.</string>
+</resources>
