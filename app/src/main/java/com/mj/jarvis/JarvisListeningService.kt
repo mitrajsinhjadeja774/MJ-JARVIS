@@ -5,47 +5,64 @@ import android.content.*
 import android.content.pm.ServiceInfo
 import android.os.*
 import android.speech.*
-import android.provider.Settings
 import java.util.Locale
 
-/** User-started, visible foreground microphone session. No audio is stored. */
+/**
+ * Explicit one-shot background commands. Never restarts recognition automatically.
+ * The notification stays visible; Privacy ON removes it and stops the service.
+ */
 class JarvisListeningService : Service() {
- private val handler = Handler(Looper.getMainLooper())
  private var recognizer: SpeechRecognizer? = null
  private var active = false
+ private var listening = false
  private val channelId = "jarvis_listening"
- private val restart = Runnable { if (active) listen() }
+ private val notificationId = 42
 
  override fun onCreate() {
   super.onCreate()
   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
-   NotificationChannel(channelId, "JARVIS listening", NotificationManager.IMPORTANCE_LOW))
+   NotificationChannel(channelId, "JARVIS voice control", NotificationManager.IMPORTANCE_LOW))
  }
+
  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-  if (intent?.action == ACTION_STOP) { stopSession(); return START_NOT_STICKY }
+  if (intent?.action == ACTION_STOP) {
+   stopSession()
+   return START_NOT_STICKY
+  }
   if (!active) {
    active = true
-   val notification = notification()
-   if (Build.VERSION.SDK_INT >= 29) startForeground(42, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-   else startForeground(42, notification)
-   listen()
+   if (Build.VERSION.SDK_INT >= 29)
+    startForeground(notificationId, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+   else startForeground(notificationId, notification())
   }
+  if (intent?.action == ACTION_SPEAK) listenOnce()
   return START_NOT_STICKY
  }
+
  private fun notification(): Notification {
   val stop = Intent(this, JarvisListeningService::class.java).setAction(ACTION_STOP)
-  val stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-  val openPi = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  val speak = Intent(this, JarvisListeningService::class.java).setAction(ACTION_SPEAK)
+  val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+  val stopPi = PendingIntent.getService(this, 1, stop, flags)
+  val speakPi = PendingIntent.getService(this, 2, speak, flags)
   return Notification.Builder(this, channelId)
    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-   .setContentTitle("M.J. JARVIS — Listening ON")
-   .setContentText("Microphone active. Tap Privacy ON to stop.")
-   .setContentIntent(openPi)
+   .setContentTitle("M.J. JARVIS — Ready")
+   .setContentText(if (listening) "Listening to one command…" else "Idle. Tap Speak to give a command.")
+   .addAction(Notification.Action.Builder(null, "Speak", speakPi).build())
    .addAction(Notification.Action.Builder(null, "Privacy ON · Stop", stopPi).build())
    .setOngoing(true).build()
  }
- private fun listen() {
-  if (!active || !SpeechRecognizer.isRecognitionAvailable(this)) { stopSession(); return }
+
+ private fun refreshNotification() {
+  (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(notificationId, notification())
+ }
+
+ private fun listenOnce() {
+  if (!active || listening) return
+  if (!SpeechRecognizer.isRecognitionAvailable(this)) return
+  listening = true
+  refreshNotification()
   recognizer?.destroy()
   recognizer = SpeechRecognizer.createSpeechRecognizer(this)
   recognizer?.setRecognitionListener(object : RecognitionListener {
@@ -54,11 +71,11 @@ class JarvisListeningService : Service() {
    override fun onRmsChanged(rmsdB: Float) {}
    override fun onBufferReceived(buffer: ByteArray?) {}
    override fun onEndOfSpeech() {}
-   override fun onError(error: Int) { schedule() }
+   override fun onError(error: Int) { finishListening() }
    override fun onResults(results: Bundle?) {
     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+    finishListening()
     handle(phrase)
-    schedule()
    }
    override fun onPartialResults(partialResults: Bundle?) {}
    override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -68,14 +85,18 @@ class JarvisListeningService : Service() {
     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
    })
-  } catch (_: Exception) { schedule() }
+  } catch (_: Exception) { finishListening() }
  }
- private fun schedule() {
-  handler.removeCallbacks(restart)
-  if (active) handler.postDelayed(restart, 1200)
+
+ private fun finishListening() {
+  listening = false
+  recognizer?.destroy()
+  recognizer = null
+  if (active) refreshNotification()
  }
+
  private fun handle(raw: String) {
-  val c = raw.trim().lowercase(Locale.ROOT)
+  val c = raw.trim().lowercase(Locale.ROOT).removePrefix("hey jarvis").trim().trimStart(',')
   if (c.contains("privacy mode on") || c.contains("stop listening") || c.contains("પ્રાઇવસી મોડ ચાલુ")) {
    stopSession()
    return
@@ -84,9 +105,10 @@ class JarvisListeningService : Service() {
       c == "scroll down" || c == "scroll up" || c == "recents" || c == "recent apps" ||
       c.startsWith("tap ")) JarvisAccessibilityService.execute(c)
  }
+
  private fun stopSession() {
   active = false
-  handler.removeCallbacks(restart)
+  listening = false
   recognizer?.cancel()
   recognizer?.destroy()
   recognizer = null
@@ -94,6 +116,9 @@ class JarvisListeningService : Service() {
   stopSelf()
  }
  override fun onBind(intent: Intent?) = null
- override fun onDestroy() { active = false; handler.removeCallbacks(restart); recognizer?.destroy(); super.onDestroy() }
- companion object { const val ACTION_STOP = "com.mj.jarvis.STOP_LISTENING" }
+ override fun onDestroy() { active = false; recognizer?.destroy(); super.onDestroy() }
+ companion object {
+  const val ACTION_STOP = "com.mj.jarvis.STOP_LISTENING"
+  const val ACTION_SPEAK = "com.mj.jarvis.SPEAK_ONCE"
+ }
 }
