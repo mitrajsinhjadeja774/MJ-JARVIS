@@ -16,6 +16,9 @@ class JarvisListeningService : Service() {
  private var recognizer: SpeechRecognizer? = null
  private var active = false
  private var listening = false
+ private var wakeMode = false
+ private var retries = 0
+ private val restart = Runnable { if (active && wakeMode && !listening) listenOnce() }
  private val channelId = "jarvis_listening"
  private val notificationId = 42
  private val handler = Handler(Looper.getMainLooper())
@@ -23,7 +26,8 @@ class JarvisListeningService : Service() {
  private val timeout = Runnable {
   if (listening) {
    Log.w("JarvisVoice", "Speech recognition timed out after 10 seconds")
-   finishListening("Timed out. Tap Speak to retry.")
+   finishListening("Waiting for Hey Jarvis…")
+   scheduleRestart()
   }
  }
 
@@ -44,21 +48,25 @@ class JarvisListeningService : Service() {
     startForeground(notificationId, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
    else startForeground(notificationId, notification())
   }
-  if (intent?.action == ACTION_SPEAK) listenOnce()
+  if (intent?.action == ACTION_WAKE) { wakeMode = true; retries = 0; listenOnce() }
+  if (intent?.action == ACTION_SPEAK) { wakeMode = false; handler.removeCallbacks(restart); listenOnce() }
   return START_NOT_STICKY
  }
 
  private fun notification(): Notification {
   val stop = Intent(this, JarvisListeningService::class.java).setAction(ACTION_STOP)
+  val wake = Intent(this, JarvisListeningService::class.java).setAction(ACTION_WAKE)
   val speak = Intent(this, JarvisListeningService::class.java).setAction(ACTION_SPEAK)
   val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
   val stopPi = PendingIntent.getService(this, 1, stop, flags)
+  val wakePi = PendingIntent.getService(this, 3, wake, flags)
   val speakPi = PendingIntent.getService(this, 2, speak, flags)
   return Notification.Builder(this, channelId)
    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
    .setContentTitle("M.J. JARVIS — Ready")
    .setContentText(if (listening) "Listening to one command…" else lastStatus)
    .addAction(Notification.Action.Builder(null, "Speak", speakPi).build())
+   .addAction(Notification.Action.Builder(null, "Hey Jarvis mode", wakePi).build())
    .addAction(Notification.Action.Builder(null, "Privacy ON · Stop", stopPi).build())
    .setOngoing(true).build()
  }
@@ -84,13 +92,23 @@ class JarvisListeningService : Service() {
    override fun onEndOfSpeech() {}
    override fun onError(error: Int) {
     Log.w("JarvisVoice", "SpeechRecognizer error code: $error")
-    finishListening("Recognition error $error. Tap Speak to retry.")
+    finishListening("Recognition error $error.")
+    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || error == SpeechRecognizer.ERROR_CLIENT) { wakeMode = false }
+    else scheduleRestart()
    }
    override fun onResults(results: Bundle?) {
     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
     Log.i("JarvisVoice", "Recognition returned; characters: ${phrase.length}")
     finishListening(if (phrase.isBlank()) "No words recognized." else "Heard command. Processing…")
-    handle(phrase)
+    if (wakeMode) {
+     val normalized = phrase.lowercase(Locale.ROOT)
+     if (normalized.contains("hey jarvis")) {
+      val command = phrase.substring(normalized.indexOf("hey jarvis") + "hey jarvis".length).trim().trimStart(',', ' ')
+      if (command.isNotEmpty()) handle(command)
+      else lastStatus = getSharedPreferences("jarvis", MODE_PRIVATE).getString("greeting", "Yes Mitraj Sir, how can I help you?") ?: "Yes Mitraj Sir, how can I help you?"
+     }
+     scheduleRestart()
+    } else handle(phrase)
    }
    override fun onPartialResults(partialResults: Bundle?) {}
    override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -104,6 +122,13 @@ class JarvisListeningService : Service() {
    Log.e("JarvisVoice", "Unable to start recognition", e)
    finishListening("Could not start voice recognition.")
   }
+ }
+
+ private fun scheduleRestart() {
+  if (!wakeMode || !active) return
+  handler.removeCallbacks(restart)
+  retries = (retries + 1).coerceAtMost(6)
+  handler.postDelayed(restart, (1000L * retries).coerceAtMost(6000L))
  }
 
  private fun finishListening(message: String) {
@@ -135,6 +160,8 @@ class JarvisListeningService : Service() {
 
  private fun stopSession() {
   active = false
+  wakeMode = false
+  handler.removeCallbacks(restart)
   handler.removeCallbacks(timeout)
   listening = false
   recognizer?.cancel()
@@ -146,6 +173,7 @@ class JarvisListeningService : Service() {
  override fun onBind(intent: Intent?) = null
  override fun onDestroy() { active = false; handler.removeCallbacks(timeout); recognizer?.destroy(); super.onDestroy() }
  companion object {
+  const val ACTION_WAKE = "com.mj.jarvis.WAKE_MODE"
   const val ACTION_STOP = "com.mj.jarvis.STOP_LISTENING"
   const val ACTION_SPEAK = "com.mj.jarvis.SPEAK_ONCE"
  }
