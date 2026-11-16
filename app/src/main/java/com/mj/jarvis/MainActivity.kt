@@ -27,10 +27,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
   tts = TextToSpeech(this, this)
   val root = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER_HORIZONTAL; setPadding(28,36,28,24) }
-  root.addView(TextView(this).apply { text="M.J. JARVIS V1.4.2"; textSize=30f; gravity=Gravity.CENTER })
+  root.addView(TextView(this).apply { text="M.J. JARVIS V1.5 (Wake Beta)"; textSize=30f; gravity=Gravity.CENTER })
   status = TextView(this).apply { text="Your personal voice assistant"; textSize=16f; gravity=Gravity.CENTER; setPadding(0,18,0,18) }
   root.addView(status)
   root.addView(Button(this).apply { text="TALK TO JARVIS"; setOnClickListener { listen() } })
+  root.addView(Button(this).apply { text="START HEY JARVIS MODE"; setOnClickListener { startWakeMode() } })
   root.addView(Button(this).apply { text="ENABLE NOTIFICATION VOICE CONTROL"; setOnClickListener { startBackgroundListening() } })
   root.addView(Button(this).apply { text="PRIVACY ON · STOP LISTENING"; setOnClickListener { stopService(Intent(this@MainActivity, JarvisListeningService::class.java)); status.text="Listening stopped — Privacy ON" } })
   root.addView(Button(this).apply {
@@ -47,6 +48,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
   setContentView(root)
   if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20)
   speak(prefs.getString("greeting",defaultGreeting) ?: defaultGreeting)
+ }
+
+ private fun startWakeMode() {
+  if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),20);return}
+  try { startForegroundService(Intent(this, JarvisListeningService::class.java).setAction(JarvisListeningService.ACTION_WAKE)); status.text="Hey Jarvis mode started (beta). Say Hey Jarvis; Privacy ON stops it." }
+  catch(e: Exception){status.text="Wake mode unavailable: ${e.message}"}
  }
 
  private fun startBackgroundListening() {
