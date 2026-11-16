@@ -6,6 +6,7 @@ import android.content.pm.ServiceInfo
 import android.os.*
 import android.speech.*
 import android.util.Log
+import android.speech.tts.TextToSpeech
 import java.util.Locale
 
 /**
@@ -18,6 +19,9 @@ class JarvisListeningService : Service() {
  private var listening = false
  private var wakeMode = false
  private var retries = 0
+ private var tts: TextToSpeech? = null
+ private var ttsReady = false
+ private var lastWakeAt = 0L
  private val restart = Runnable { if (active && wakeMode && !listening) listenOnce() }
  private val channelId = "jarvis_listening"
  private val notificationId = 42
@@ -33,8 +37,15 @@ class JarvisListeningService : Service() {
 
  override fun onCreate() {
   super.onCreate()
+  tts = TextToSpeech(this) { code ->
+   if (code == TextToSpeech.SUCCESS) {
+    ttsReady = true
+    tts?.language = Locale("en", "IN")
+    tts?.setSpeechRate(0.95f)
+   }
+  }
   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
-   NotificationChannel(channelId, "JARVIS voice control", NotificationManager.IMPORTANCE_LOW))
+   NotificationChannel(channelId, "JARVIS voice control", NotificationManager.IMPORTANCE_LOW).apply { setSound(null, null); enableVibration(false) })
  }
 
  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -105,8 +116,15 @@ class JarvisListeningService : Service() {
      if (normalized.contains("hey jarvis")) {
       val command = phrase.substring(normalized.indexOf("hey jarvis") + "hey jarvis".length).trim().trimStart(',', ' ')
       if (command.isNotEmpty()) handle(command)
-      else lastStatus = getSharedPreferences("jarvis", MODE_PRIVATE).getString("greeting", "Yes Mitraj Sir, how can I help you?") ?: "Yes Mitraj Sir, how can I help you?"
+      else {
+       lastStatus = getSharedPreferences("jarvis", MODE_PRIVATE).getString("greeting", "Yes Mitraj Sir, how can I help you?") ?: "Yes Mitraj Sir, how can I help you?"
+       if (SystemClock.elapsedRealtime() - lastWakeAt > 3000L) {
+        lastWakeAt = SystemClock.elapsedRealtime()
+        if (ttsReady) tts?.speak(lastStatus, TextToSpeech.QUEUE_FLUSH, null, "wake_greeting")
+       }
+      }
      }
+     
      scheduleRestart()
     } else handle(phrase)
    }
@@ -128,7 +146,7 @@ class JarvisListeningService : Service() {
   if (!wakeMode || !active) return
   handler.removeCallbacks(restart)
   retries = (retries + 1).coerceAtMost(6)
-  handler.postDelayed(restart, (1000L * retries).coerceAtMost(6000L))
+  handler.postDelayed(restart, (5000L * retries).coerceAtMost(30000L))
  }
 
  private fun finishListening(message: String) {
@@ -171,7 +189,7 @@ class JarvisListeningService : Service() {
   stopSelf()
  }
  override fun onBind(intent: Intent?) = null
- override fun onDestroy() { active = false; handler.removeCallbacks(timeout); recognizer?.destroy(); super.onDestroy() }
+ override fun onDestroy() { active = false; handler.removeCallbacks(timeout); handler.removeCallbacks(restart); recognizer?.destroy(); tts?.stop(); tts?.shutdown(); super.onDestroy() }
  companion object {
   const val ACTION_WAKE = "com.mj.jarvis.WAKE_MODE"
   const val ACTION_STOP = "com.mj.jarvis.STOP_LISTENING"
